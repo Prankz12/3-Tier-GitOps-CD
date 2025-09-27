@@ -1,0 +1,397 @@
+
+name: Deploy Tasks
+
+on:
+  workflow_call:
+    inputs:
+      env:
+        description: 'env (dev, qa, preprod, prod)'
+        required: true
+        type: string
+      project:
+        description: 'Project name'
+        required: true
+        type: string
+      module:
+        description: 'Module name'
+        required: false
+        type: string
+        default: ''
+      country:
+        description: 'Country code'
+        required: false
+        type: string
+        default: ''
+      code:
+        description: 'Region code'
+        required: false
+        type: string
+        default: ''
+      ImageTag:
+        description: 'Image tag'
+        required: false
+        type: string
+        default: ''
+      restartOnly:
+        description: 'Restart only flag'
+        required: false
+        type: boolean
+        default: false
+      namespace:
+        description: 'Kubernetes namespace'
+        required: false
+        type: string
+        default: ''
+      endpoint:
+        description: 'K8s Cluster Endpoint' 
+        required: false
+        type: string
+        default: ''
+jobs:
+  deploy:
+    name: 'Deploy to ${{ inputs.env }}${{ inputs.country }}${{ inputs.module }}'
+    # runs-on: [self-hosted, linux-self-hosted, Linux]
+    # runs-on: [pep-dps-nonprod-eus-global-01-aks-runners]
+    runs-on: [pep-dps-nonprod-gwc-global-01-aks-runners]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          clean: true
+      # - name: kubectl install
+      #   if: ${{ !inputs.restartOnly }}
+      #   uses: azure/setup-kubectl@v4
+      #   with:
+      #     version: '1.31'
+      # - uses: Azure/use-kubelogin@v1
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.SVC_PAT }}
+      #   with: 
+      #     kubelogin-version: 'latest'
+
+      # - name: Configure Kubeconfig 
+      #   uses: azure/k8s-set-context@v4
+      #   with:    
+      #     method: kubeconfig 
+      #     kubeconfig: ${{ secrets.DPS_NONPROD_EUS_KUBECONFIG }}
+      # - name: Print secret length
+      #   run: | 
+      #      echo "Secret length: ${#SECRET_VALUE}"
+      #   env:
+      #     SECRET_VALUE: ${{ secrets.DPS_NONPROD_EUS_KUBECONFIG }}
+      # - name: Setup Kubernetes Config
+      #   run: |
+      #     # mkdir -p /root/.kube
+      #     # echo "${{ secrets.DPS_NONPROD_EUS_KUBECONFIG }}" > ~/.kube/config
+      #     # chmod 600 ~/.kube/config
+      #     # echo "Verifying kubeconfig content:"
+      #     # cat ~/.kube/config
+      #     # # echo "Checking current context:"
+      #     kubectl config current-context
+      # - name: Verify Kubeconfig
+      #   run:  kubectl get ns
+
+          
+
+      - name: Set Endpoint Variable
+        if: ${{ !inputs.restartOnly }}
+        shell: bash
+        run: |
+          echo "${{ inputs.endpoint }}"
+          endpoint="${{ inputs.endpoint }}"
+          
+          # Check if it ends with -aks-<something>
+          if [[ "$endpoint" =~ -aks-[a-zA-Z0-9_-]+$ ]]; then
+            trimmed_endpoint=$(echo "$endpoint" | sed -r 's/(-aks)-[a-zA-Z0-9_-]+$/\1/')
+            echo "Trimmed endpoint: $trimmed_endpoint"
+          else
+            trimmed_endpoint="$endpoint"
+            echo "No trimming needed."
+          fi
+          
+          echo "endpoint=$trimmed_endpoint" >> $GITHUB_ENV
+
+      - name: Set Image Tag
+        if: ${{ !inputs.restartOnly }}
+        shell: bash
+        run: |
+          if [[ -z "${{ inputs.ImageTag }}" ]]; then
+            tag="${{ github.run_number }}"
+            echo "No custom image tag provided. Using Build Number as image tag: $tag"
+          else
+            tag="${{ inputs.ImageTag }}"
+            echo "Custom image tag provided: $tag"
+          fi
+          echo "tag=$tag" >> $GITHUB_ENV
+
+      - name: Determine FOLDER_PATH
+        if: ${{ !inputs.restartOnly }}
+        shell: bash
+        run: |
+          set -e
+          project_name=$(basename "${{ inputs.project }}")
+          if [[ -n "${{ inputs.module }}" ]]; then
+            base_project_name="${project_name%-api}"
+            project_path="$base_project_name-${{ inputs.module }}"
+          else
+            project_path="$project_name"
+          fi
+          
+          # Determine environment with code suffix
+          if [ -n "${{ inputs.country }}" ]; then
+            environment="${{ inputs.env }}-${{ inputs.country }}"
+          else
+            environment="${{ inputs.env }}"
+          fi
+          
+          # Add your conditional check for FOLDER_PATH
+          if [[ -n "${{ vars.SECTOR_HELM }}" ]]; then
+            FOLDER_PATH="$environment/$endpoint/${{ vars.SECTOR_HELM }}/$project_path"
+          else
+            FOLDER_PATH="$environment/$endpoint/$project_path"
+          fi
+          
+          echo "FOLDER_PATH=$FOLDER_PATH" >> $GITHUB_ENV
+          echo "VALUES_FILE_PATH=$FOLDER_PATH" >> $GITHUB_ENV
+          echo "FOLDER_PATH is: $FOLDER_PATH"  # For debugging purpose
+          echo "VALUES_FILE_PATH is: $FOLDER_PATH"
+
+      - name: Check for Deployment yaml
+        if: ${{ !inputs.restartOnly }}
+        shell: bash
+        run: |
+          # rm -rf ${{ vars.MANIFEST_REPO_NAME }}
+          git clone 'https://${{ secrets.SVC_USER }}:${{ secrets.SVC_PAT }}@${{ vars.MANIFEST_REPO_URL }}' --branch ${{ vars.MANIFEST_BRANCH }}
+          ls -al
+          
+          echo "$GITHUB_WORKSPACE/${{ vars.MANIFEST_REPO_NAME }}/${{ env.FOLDER_PATH }}/${{ vars.DEPLOYMENT_FILE }}"
+          ls -al "$GITHUB_WORKSPACE/${{ vars.MANIFEST_REPO_NAME }}/${{ env.FOLDER_PATH }}"
+          
+          if [[ -e "$GITHUB_WORKSPACE/${{ vars.MANIFEST_REPO_NAME }}/${{ env.FOLDER_PATH }}/${{ vars.DEPLOYMENT_FILE }}" ]]; then
+            echo "Deployment descriptor yaml exists in Repository."
+          else
+            echo "Deployment descriptor yaml does not exists in Repository."
+            exit 1
+          fi
+
+      # - name: Install Azure CLI
+      #   if: ${{ !inputs.restartOnly }}
+      #   run: |
+      #     apt-get update
+      #     apt-get install -y azure-cli
+      
+      - name: Install Azure CLI with pip (no sudo)
+        run: |
+          python3 -m venv ~/.venv-az
+          source ~/.venv-az/bin/activate
+          pip install --upgrade pip
+          pip install azure-cli
+          az version
+
+      - name: Login to Prod ACR
+        if: ${{ contains(fromJson('["preprod", "prod", "prod_dr", "dev"]'), inputs.env) && !inputs.restartOnly }}
+        shell: bash
+        run: |
+          az login --service-principal -u ${{ vars.AAD_PROD_SPN_CLIENT_ID }} -p ${{ secrets.AAD_PROD_SPN_CLIENT_SECRET }} --tenant ${{ vars.AAD_TENANT_ID }}
+          az account set --subscription ${{ secrets.AAD_PROD_SUB_ID }}
+
+      - name: Push image using Azure CLI
+        if: ${{ contains(fromJson('["preprod", "prod", "prod_dr"]'), inputs.env) && !inputs.restartOnly }}
+        shell: bash
+        run: |
+          project_name=$(echo "${{ inputs.project }}" | awk -F'/' '{print $2}')
+          if [[ -n "$project_name" ]]; then
+            acrRepoName="${{ vars.ACR_REPO_NAME }}"
+          else
+            acrRepoName="$project_name"
+          fi
+          az acr import -n ${{ vars.PROD_ACR_URL }} \
+            --source ${{ vars.ACR_REPO_PREFIX }}/$acrRepoName:${{ env.tag }} \
+            -t ${{ vars.ACR_REPO_PREFIX }}/$acrRepoName:${{ env.tag }} \
+            --registry /subscriptions/${{ vars.NONPROD_ACR_SUB_ID }}/resourceGroups/${{ vars.NONPROD_RESOURCE_GROUP }}/providers/Microsoft.ContainerRegistry/registries/${{ vars.NONPROD_ACR_NAME }} \
+            --force
+          if [ $? -ne 0 ]; then
+            echo "❌ Error occured while importing image!"
+            exit 1
+          else
+            echo "✅ Image import successful!"
+          fi
+
+          az acr repository  list -n ${{ vars.PROD_ACR_URL }}
+          az acr repository show-tags -n ${{ vars.PROD_ACR_URL }} --repository ${{ vars.ACR_REPO_PREFIX }}/$acrRepoName
+
+      # Fetch the previous image from AKS & store as variable
+      - name: Fetch Current Image Tag from AKS Deployment
+        id: FetchTheDeployedImage
+        if: ${{ !inputs.restartOnly }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubelogin convert-kubeconfig --kubeconfig $DPS_NONPROD_EUS_KUBECONFIG
+          APP_NAME=$(echo "${{ inputs.project }}" | awk -F'/' '{print $NF}')
+          echo "Fetching image from deployment: $APP_NAME"
+          image=$(kubectl get deployment "$APP_NAME" -n "${{ inputs.namespace }}" -o=jsonpath="{.spec.template.spec.containers[0].image}")
+          echo "Cluster image: $image"
+
+          tag=$(echo "$image" | awk -F ':' '{print $NF}')
+          echo "Extracted image tag: $tag"
+
+          echo "DEPLOYED_IMAGE_TAG=$tag" >> $GITHUB_OUTPUT
+
+      - name: Update & Push helm release
+        id: manifest-push
+        if: ${{ !inputs.restartOnly }}
+        shell: bash
+        run: |
+          cd "$GITHUB_WORKSPACE/${{ vars.MANIFEST_REPO_NAME }}"
+          git pull
+          
+          # Create branch and configure git
+          branch_name="$(basename ${{ inputs.project }})/${{ inputs.env }}${{ inputs.module }}${{ inputs.country }}-${{ env.tag }}-$(date +%H%M%S)"
+          git branch -D "$branch_name" 2>/dev/null || true
+          git checkout -b "$branch_name"
+          git config --local user.email "${{ secrets.SVC_USER }}@pepsico.com"
+          git config --local user.name "${{ secrets.SVC_USER }}"
+          
+          # Update image tag
+          current_tag=$(grep -o 'tag: [^[:space:]]*' "./${{ env.FOLDER_PATH }}/${{ vars.DEPLOYMENT_FILE }}" | cut -d' ' -f2)
+          sed -i "s/tag: $current_tag/tag: ${{ env.tag }}/g" "./${{ env.FOLDER_PATH }}/${{ vars.DEPLOYMENT_FILE }}"
+          
+          # Commit and push if changes exist
+          if git diff --quiet "./${{ env.FOLDER_PATH }}/${{ vars.DEPLOYMENT_FILE }}"; then
+            echo "No changes to commit - tag is already up to date"
+            echo "has-changes=false" >> $GITHUB_OUTPUT
+          else
+            git add "./${{ env.FOLDER_PATH }}/${{ vars.DEPLOYMENT_FILE }}"
+            git commit -m "Deploy ${{ inputs.env }}: $current_tag → ${{ env.tag }}"
+            git remote set-url origin "https://${{ secrets.SVC_USER }}:${{ secrets.SVC_PAT }}@${{ vars.MANIFEST_REPO_URL }}"
+            git pull origin "${{ vars.MANIFEST_BRANCH }}" --rebase || true
+            git push -u origin "$branch_name" --force
+            echo "Successfully pushed branch: $branch_name"
+            echo "has-changes=true" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "BRANCH_NAME=$branch_name" >> $GITHUB_ENV
+
+      - name: Install the gh cli
+        if: ${{ !inputs.restartOnly }}
+        run: |
+          #type -p yum-config-manager >/dev/null || sudo yum install yum-utils
+          #yum-config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo
+          #yum install gh -y
+          #gh version
+          type -p gh >/dev/null || (
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg &&
+            chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg &&
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list &&
+            apt update &&
+            apt install gh -y
+          )
+          gh version
+
+
+      - name: Create Pull Request
+        if: ${{ !inputs.restartOnly && steps.manifest-push.outputs.has-changes == 'true' }}
+        id: create-pr
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.SVC_PAT }}
+        run: |
+          cd "$GITHUB_WORKSPACE/${{ vars.MANIFEST_REPO_NAME }}"
+          current_branch=$(git branch --show-current)
+          
+          pr_url=$(gh pr create \
+            --repo "Global-SnT/${{ vars.MANIFEST_REPO_NAME }}" \
+            --title "deployment ${{ github.run_number }} - ${{ inputs.env }}" \
+            --body "Automated deployment for build ${{ github.run_number }} to ${{ inputs.env }} env" \
+            --head "$current_branch" \
+            --base "${{ vars.MANIFEST_BRANCH }}")
+          
+          pr_number=$(echo "$pr_url" | grep -o '[0-9]\+$')
+          echo "Created PR #$pr_number: $pr_url"
+          echo "pr-number=$pr_number" >> $GITHUB_OUTPUT
+
+      - name: Auto-merge PR
+        if: ${{ !inputs.restartOnly && contains(fromJson('["dev", "qa", "preprod","hfdev","hfuat"]'), inputs.env) && steps.manifest-push.outputs.has-changes == 'true' }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.SVC_PAT }}
+        run: |
+          gh pr merge "${{ steps.create-pr.outputs.pr-number }}" --admin \
+            --repo "Global-SnT/${{ vars.MANIFEST_REPO_NAME }}" \
+            --merge \
+            --delete-branch
+          
+          echo "PR ${{ steps.create-pr.outputs.pr-number }} merged successfully"
+
+      - name: Create Git Tag
+        if: ${{ !inputs.restartOnly && steps.manifest-push.outputs.has-changes == 'true' }}
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.SVC_PAT }}
+      
+      - name: Tag Release
+        if: ${{ !inputs.restartOnly && steps.manifest-push.outputs.has-changes == 'true' }}
+        shell: bash
+        run: |
+          #export HOME=/home/runner
+          #mkdir -p "$HOME"
+          echo "HOME is: $HOME"
+          tag_name="${{ inputs.env }}${{ inputs.module }}${{ inputs.country }}-R-${{ github.run_number }}"
+          echo "Creating git tag: $tag_name"
+          
+          git config --global user.email "${{ secrets.SVC_USER }}@pepsico.com"
+          git config --global user.name "${{ secrets.SVC_USER }}"
+          
+          git tag -f -a "$tag_name" -m "Release tag for ${{ inputs.env }} env - Build ${{ github.run_number }}"
+          git push origin -f "$tag_name"
+          
+          echo "Git tag '$tag_name' created and pushed successfully!"
+
+      - name: Restart Deployment
+        if: ${{ inputs.restartOnly }}
+        shell: bash
+        run: |
+          project_name=$(basename "${{ inputs.project }}")
+          echo "Restarting deployment for project: $project_name in env: ${{ inputs.env }}"
+          kubectl rollout restart deployment $project_name -n ${{ inputs.namespace }}
+
+      # - name: Restart Deployment
+      #   if: ${{ inputs.restartOnly }}
+      #   shell: bash
+      #   env:
+      #     KUBECONFIG_DATA: ${{ secrets.KUBECONFIG}}
+      #   run: |
+      #     set -euo pipefail
+
+      #     echo "Restarting deployment for project: $(basename "${{ inputs.project }}") in env: ${{ inputs.env }}"
+
+      #     project_name=$(basename "${{ inputs.project }}")
+
+      #     echo "Installing kubectl..."
+      #     curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+      #     chmod +x kubectl
+      #     mkdir -p kubectl-bin
+      #     mv kubectl kubectl-bin/
+      #     export PATH="$PWD/kubectl-bin:$PATH"
+
+      #     echo "Installing kubelogin..."
+      #     curl -LO https://github.com/Azure/kubelogin/releases/download/v0.1.1/kubelogin-linux-amd64.zip
+      #     unzip kubelogin-linux-amd64.zip
+      #     chmod +x bin/linux_amd64/kubelogin
+      #     mv bin/linux_amd64/kubelogin kubectl-bin/
+
+
+      #     echo "Setting up kubeconfig..."
+      #     mkdir -p ~/.kube
+      #     echo "$KUBECONFIG_DATA" > ~/.kube/config
+      #     chmod 600 ~/.kube/config
+
+      #     echo "Converting kubeconfig auth-provider to exec..."
+      #     kubelogin convert-kubeconfig -l azurecli
+
+      #     echo "Verifying kubectl..."
+      #     kubectl version --client
+      #     kubectl config current-context
+
+      #     echo "Restarting deployment rollout..."
+      #     kubectl rollout restart deployment "$project_name" -n "${{ inputs.namespace }}"
