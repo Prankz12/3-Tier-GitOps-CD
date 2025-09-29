@@ -1,7 +1,5 @@
 name: Deploy ArgoCD Trunk
 
-on:
-  workflow_call:
     inputs:
       ImageTag:
         description: 'ImageTag'
