@@ -71,7 +71,7 @@ jobs:
   dev:
     name: 'dev${{ inputs.module }}${{ inputs.country }}'
     if: >-
-    (inputs.deployOnly == true && github.ref_name == 'feature/priyanka_testing' && inputs.env == 'dev') ||
+    (inputs.deployOnly == true && github.ref_name == 'feature/priyanka_testing' && inputs.env == 'dev')
     (github.ref == 'refs/heads/feature/priyanka_testing' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'dev') ||
     (startsWith(github.ref, 'refs/heads/feature/') && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'dev') ||
     (github.ref == 'refs/heads/feature/priyanka_testing' && inputs.restartOnly == true && inputs.env == 'dev') ||
