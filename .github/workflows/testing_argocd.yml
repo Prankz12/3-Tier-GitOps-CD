@@ -32,7 +32,7 @@ on:
         description: 'project'
         required: false
         type: string
-        default: ${{ github.repository }}
+        default: ''
 
       isDrProd:
         description: 'isDrProd'
