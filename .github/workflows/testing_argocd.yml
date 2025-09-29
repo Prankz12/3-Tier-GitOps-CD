@@ -206,6 +206,7 @@ jobs:
       endpoint: ${{ vars[format('AKS_PROD_DR_ENDPOINT{0}', inputs.code)] }}
     secrets: inherit
     
+    
 
 
 
