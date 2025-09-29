@@ -47,7 +47,7 @@ on:
 
 jobs:
   deploy:
-    uses: Global-SnT/pepsico-global-templates/.github/workflows/argocdtrunk-test.yml@feature/priyanka_testing
+
     with:
       restartOnly: ${{ inputs.restartOnly }}
       deployOnly: ${{ inputs.deployOnly }}
