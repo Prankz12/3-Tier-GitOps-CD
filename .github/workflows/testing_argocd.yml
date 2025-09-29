@@ -47,7 +47,7 @@ on:
 
 jobs:
   deploy:
-
+  uses:xyz
     with:
       restartOnly: ${{ inputs.restartOnly }}
       deployOnly: ${{ inputs.deployOnly }}
