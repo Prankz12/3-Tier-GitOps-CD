@@ -32,7 +32,7 @@ on:
         description: 'project'
         required: false
         type: string
-        default: ${{ github.repository }}
+        default: ''
 
       isDrProd:
         description: 'isDrProd'
@@ -205,9 +205,6 @@ jobs:
       namespace: ${{ vars[format('AKSNAMESPACE_PROD_DR{0}', inputs.code)] }}
       endpoint: ${{ vars[format('AKS_PROD_DR_ENDPOINT{0}', inputs.code)] }}
     secrets: inherit
-    
-    
 
 
-
-
+          
