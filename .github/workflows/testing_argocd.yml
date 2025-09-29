@@ -1,59 +1,194 @@
-name: Deploy to argocd trunk
+name: Deploy ArgoCD Trunk
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       ImageTag:
-        description: 'Image Tag'
+        description: 'ImageTag'
         required: false
         type: string
         default: ''
       deployOnly:
-        description: 'Deploy Only'
-        required: false
-        type: boolean
-        default: false
-      restartOnly:
-        description: 'Restart Only'
-        required: false
-        type: boolean
-        default: false
-      isDrProd:
-        description: 'Deploy to DR Environment?'
+        description: 'deployOnly'
         required: false
         type: boolean
         default: false
       cr_number:
-        description: 'CR Number'
+        description: 'cr_number'
         required: false
         type: string
-        default: 'null'
-      env:
-        description: 'Environment (for regular deployment)'
+        default: ''
+      restartOnly:
+        description: 'restartOnly'
         required: false
-        type: choice
-        options:
-          - dev
-          - qa
-          - preprod
-          - prod
-          - none
-        default: none
+        type: boolean
+        default: false
+      module:
+        description: 'module'
+        required: false
+        type: string
+        default: ''
       project:
         description: 'project'
         required: false
         type: string
-        default: ""
+        default: ${{ github.repository }}
+
+      isDrProd:
+        description: 'isDrProd'
+        required: false
+        type: boolean
+        default: false
+      isHotfixBranch:
+        description: 'isHotfixBranch'
+        required: false
+        type: boolean
+        default: false
+      code:
+        description: 'code'
+        required: false
+        type: string
+        default: ''
+      country:
+        description: 'country'
+        required: false
+        type: string
+        default: ''
+      clusterSuffix:
+        description: 'clusterSuffix'
+        required: false
+        type: string
+        default: '01-aks'
+      env:
+        description: 'env to deploy to'
+        required: false
+        type: string
+        default: ''
+env:
+  DEPLOYMENT_FILE: helm-values.yaml
 
 jobs:
-  deploy:
-  uses:xyz
+  dev:
+    name: 'dev${{ inputs.module }}${{ inputs.country }}'
+    if: >-
+    (inputs.deployOnly == true && github.ref_name == 'feature/argocd-trunk' && inputs.env == 'dev') ||
+    (github.ref == 'refs/heads/feature/argocd-trunk' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'dev') ||
+    (startsWith(github.ref, 'refs/heads/feature/') && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'dev') ||
+    (github.ref == 'refs/heads/feature/argocd-trunk' && inputs.restartOnly == true && inputs.env == 'dev') ||
+    (inputs.env == '' || inputs.env == null) ||
+    (github.ref == 'refs/heads/main' && inputs.deployOnly == false && inputs.restartOnly == false) ||
+    (startsWith(github.ref, 'refs/heads/feature/') && inputs.deployOnly == false && inputs.restartOnly == false)
+
+    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/argocd-trunk
     with:
-      restartOnly: ${{ inputs.restartOnly }}
-      deployOnly: ${{ inputs.deployOnly }}
-      project: ${{ inputs.project || github.repository }}
+      env: dev
+      project: ${{ inputs.project }}
+      module: ${{ inputs.module }}
+      country: ${{ inputs.country }}
+      code: ${{ inputs.code }}
       ImageTag: ${{ inputs.ImageTag }}
-      env: ${{ inputs.env }}
-      isDrProd: ${{ inputs.isDrProd }}
-      cr_number: ${{ inputs.cr_number }}
+      restartOnly: ${{ inputs.restartOnly }}
+      namespace: ${{ inputs.namespace || vars[format('AKSNAMESPACE_DEV{0}', inputs.code)] }}
+      endpoint: ${{ inputs.endpoint || vars[format('AKS_DEV_ENDPOINT{0}', inputs.code)] }}
+      secrets: inherit
+
+  qa:
+    name: 'qa${{ inputs.module }}${{ inputs.country }}'
+    needs: dev
+    if: >
+      (
+        (always() && inputs.deployOnly == true && github.ref_name == 'feature/argocd-trunk' && inputs.env == 'qa')
+        ||
+        (always() && github.ref == 'refs/heads/feature/argocd-trunk' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'qa')
+        ||
+        (always() && github.ref == 'refs/heads/feature/argocd-trunk' && inputs.restartOnly == true && inputs.env == 'qa')
+        ||
+        ((inputs.env == '' || inputs.env == null) && needs.dev.result == 'success')
+        ||
+        (github.ref == 'refs/heads/main' && needs.dev.result == 'success' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == '')
+      )
+    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/argocd-trunk
+    with:
+      env: qa
+      project: ${{ inputs.project }}
+      module: ${{ inputs.module }}
+      country: ${{ inputs.country }}
+      code: ${{ inputs.code }}
+      ImageTag: ${{ inputs.ImageTag }}
+      restartOnly: ${{ inputs.restartOnly }}
+      namespace: ${{ vars[format('AKSNAMESPACE_QA{0}', inputs.code)] }}
+      endpoint: ${{ vars[format('AKS_QA_ENDPOINT{0}', inputs.code)] }}
     secrets: inherit
+
+  preprod:
+    name: 'preprod${{ inputs.module }}${{ inputs.country }}'
+    needs: qa
+    if: >
+      (
+        (always() && inputs.deployOnly == true && github.ref_name == 'feature/argocd-trunk' && inputs.env == 'preprod')
+        ||
+        (always() && github.ref == 'refs/heads/feature/argocd-trunk' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'preprod')
+        ||
+        (always() && github.ref == 'refs/heads/feature/argocd-trunk' && inputs.restartOnly == true && inputs.env == 'preprod')
+        ||
+        ((inputs.env == '' || inputs.env == null) && needs.qa.result == 'success')
+        ||
+        (github.ref == 'refs/heads/feature/argocd-trunk' && needs.qa.result == 'success' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == '')
+      )
+    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/argocd-trunk
+    with:
+      env: preprod
+      project: ${{ inputs.project }}
+      module: ${{ inputs.module }}
+      country: ${{ inputs.country }}
+      code: ${{ inputs.code }}
+      ImageTag: ${{ inputs.ImageTag }}
+      restartOnly: ${{ inputs.restartOnly }}
+      namespace: ${{ vars[format('AKSNAMESPACE_PREPROD{0}', inputs.code)] }}
+      endpoint: ${{ vars[format('AKS_PREPROD_ENDPOINT{0}', inputs.code)] }}
+    secrets: inherit
+
+  prod:
+    name: 'prod-${{ inputs.module }}-${{ inputs.country }}'
+    needs: [preprod]
+    if: >
+      (
+        always() &&
+        (
+          (github.ref == 'refs/heads/feature/priyanka-testing' && (needs.preprod.result == 'success') && inputs.cr_number != 'null' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'prod')
+          ||
+          (github.ref == 'refs/heads/feature/priyanka-testing' && (needs.preprod.result == 'success') && inputs.cr_number != 'null' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == '')
+          ||
+          (github.ref == 'refs/heads/feature/priyanka-testing' && (inputs.deployOnly == true || inputs.restartOnly == true) && inputs.env == 'prod' && inputs.cr_number != 'null')
+          ||
+          ((inputs.env == '' || inputs.env == null) && (needs.preprod.result == 'success'))
+        )
+      )
+    uses: Global-SnT/global-templates-core/.github/workflows/TriggerIntegrationTest.yml@feature/priyanka-testing
+    with:
+      namespace: ${{ inputs.namespace || vars[format('AKSNAMESPACE_PROD{0}', inputs.code)] }}
+      endpoint: ${{ inputs.endpoint || vars[format('AKS_PROD_ENDPOINT{0}', inputs.code)] }}
+
+  prod-dr:
+    name: 'prod_dr${{ inputs.module }}${{ inputs.country }}'
+    needs: prod
+    if: >
+      (
+        always() && needs.prod.result == 'success' && inputs.isDrProd == true
+      )
+    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/argocd-trunk
+    with:
+      env: prod_dr
+      project: ${{ inputs.project }}
+      module: ${{ inputs.module }}
+      country: ${{ inputs.country }}
+      code: ${{ inputs.code }}
+      ImageTag: ${{ inputs.ImageTag }}
+      restartOnly: ${{ inputs.restartOnly }}
+      namespace: ${{ vars[format('AKSNAMESPACE_PROD_DR{0}', inputs.code)] }}
+      endpoint: ${{ vars[format('AKS_PROD_DR_ENDPOINT{0}', inputs.code)] }}
+    secrets: inherit
+
+
+
+          
