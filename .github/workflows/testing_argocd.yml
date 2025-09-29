@@ -1,5 +1,4 @@
-what is the syntax issue or any yaml code issues 
-name: Deploy to argoCD trunk
+name: Deploy to argocd trunk
 on:
   workflow_dispatch:
     inputs:
