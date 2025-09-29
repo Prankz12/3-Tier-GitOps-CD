@@ -70,17 +70,16 @@ env:
 jobs:
   dev:
     name: 'dev${{ inputs.module }}${{ inputs.country }}'
-    if: >
-    (
-    (inputs.deployOnly == true && github.ref_name == 'feature/priyanka_testing' && inputs.env == 'dev')
+    if: >-
+    
+    ((inputs.deployOnly == true && github.ref_name == 'feature/priyanka_testing' && inputs.env == 'dev')
     (github.ref == 'refs/heads/feature/priyanka_testing' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'dev') ||
     (startsWith(github.ref, 'refs/heads/feature/') && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'dev') ||
     (github.ref == 'refs/heads/feature/priyanka_testing' && inputs.restartOnly == true && inputs.env == 'dev') ||
     (inputs.env == '' || inputs.env == null) ||
     (github.ref == 'refs/heads/main' && inputs.deployOnly == false && inputs.restartOnly == false) ||
-    (startsWith(github.ref, 'refs/heads/feature/') && inputs.deployOnly == false && inputs.restartOnly == false)
-    )
-
+    (startsWith(github.ref, 'refs/heads/feature/') && inputs.deployOnly == false && inputs.restartOnly == false))
+    
     uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/priyanka_testing
     with:
       env: dev
