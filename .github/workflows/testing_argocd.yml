@@ -1,4 +1,3 @@
-
 name: Deploy ArgoCD Trunk
 
 on:
@@ -18,7 +17,7 @@ on:
         description: 'cr_number'
         required: false
         type: string
-        default: ''
+        default: 'null'
       restartOnly:
         description: 'restartOnly'
         required: false
@@ -33,7 +32,7 @@ on:
         description: 'project'
         required: false
         type: string
-        default: ''
+        default: ${{ github.repository }}
 
       isDrProd:
         description: 'isDrProd'
@@ -65,22 +64,31 @@ on:
         required: false
         type: string
         default: ''
+
 env:
   DEPLOYMENT_FILE: helm-values.yaml
 
 jobs:
   dev:
     name: 'dev${{ inputs.module }}${{ inputs.country }}'
-    if: >-
-    (inputs.deployOnly == true && github.ref_name == 'feature/priyanka_testing' && inputs.env == 'dev') ||
-    (github.ref == 'refs/heads/feature/priyanka_testing' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'dev') ||
-    (startsWith(github.ref, 'refs/heads/feature/') && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'dev') ||
-    (github.ref == 'refs/heads/feature/priyanka_testing' && inputs.restartOnly == true && inputs.env == 'dev') ||
-    (inputs.env == '' || inputs.env == null) ||
-    (github.ref == 'refs/heads/main' && inputs.deployOnly == false && inputs.restartOnly == false) ||
-    (startsWith(github.ref, 'refs/heads/feature/') && inputs.deployOnly == false && inputs.restartOnly == false)
+    if: >
+      (
+        (inputs.deployOnly == true && github.ref_name == 'feature/argocd-trunk' && inputs.env == 'dev')
+        ||
+        (github.ref == 'refs/heads/feature/argocd-trunk' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'dev')
+        ||
+        (startsWith(github.ref, 'refs/heads/feature/') && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'dev')
+        ||
+        (github.ref == 'refs/heads/feature/argocd-trunk' && inputs.restartOnly == true && inputs.env == 'dev')
+        ||
+        (inputs.env == '' || inputs.env == null)
+        ||
+        (github.ref == 'refs/heads/main' && inputs.deployOnly == false && inputs.restartOnly == false)
+        ||
+        (startsWith(github.ref, 'refs/heads/feature/') && inputs.deployOnly == false && inputs.restartOnly == false)
+      )
 
-    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/priyanka_testing
+    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/argocd-trunk
     with:
       env: dev
       project: ${{ inputs.project }}
@@ -89,26 +97,26 @@ jobs:
       code: ${{ inputs.code }}
       ImageTag: ${{ inputs.ImageTag }}
       restartOnly: ${{ inputs.restartOnly }}
-      namespace: ${{ inputs.namespace || vars[format('AKSNAMESPACE_DEV{0}', inputs.code)] }}
-      endpoint: ${{ inputs.endpoint || vars[format('AKS_DEV_ENDPOINT{0}', inputs.code)] }}
-      secrets: inherit
+      namespace: ${{ vars[format('AKSNAMESPACE_DEV{0}', inputs.code)] }}
+      endpoint: ${{ vars[format('AKS_DEV_ENDPOINT{0}', inputs.code)] }}
+    secrets: inherit
 
   qa:
     name: 'qa${{ inputs.module }}${{ inputs.country }}'
     needs: dev
     if: >
       (
-        (always() && inputs.deployOnly == true && github.ref_name == 'feature/priyanka_testing' && inputs.env == 'qa')
+        (always() && inputs.deployOnly == true && github.ref_name == 'feature/argocd-trunk' && inputs.env == 'qa')
         ||
-        (always() && github.ref == 'refs/heads/feature/priyanka_testing' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'qa')
+        (always() && github.ref == 'refs/heads/feature/argocd-trunk' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'qa')
         ||
-        (always() && github.ref == 'refs/heads/feature/priyanka_testing' && inputs.restartOnly == true && inputs.env == 'qa')
+        (always() && github.ref == 'refs/heads/feature/argocd-trunk' && inputs.restartOnly == true && inputs.env == 'qa')
         ||
         ((inputs.env == '' || inputs.env == null) && needs.dev.result == 'success')
         ||
         (github.ref == 'refs/heads/main' && needs.dev.result == 'success' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == '')
       )
-    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/priyanka_testing
+    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/argocd-trunk
     with:
       env: qa
       project: ${{ inputs.project }}
@@ -126,17 +134,17 @@ jobs:
     needs: qa
     if: >
       (
-        (always() && inputs.deployOnly == true && github.ref_name == 'feature/priyanka_testing' && inputs.env == 'preprod')
+        (always() && inputs.deployOnly == true && github.ref_name == 'feature/argocd-trunk' && inputs.env == 'preprod')
         ||
-        (always() && github.ref == 'refs/heads/feature/priyanka_testing' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'preprod')
+        (always() && github.ref == 'refs/heads/feature/argocd-trunk' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'preprod')
         ||
-        (always() && github.ref == 'refs/heads/feature/priyanka_testing' && inputs.restartOnly == true && inputs.env == 'preprod')
+        (always() && github.ref == 'refs/heads/feature/argocd-trunk' && inputs.restartOnly == true && inputs.env == 'preprod')
         ||
         ((inputs.env == '' || inputs.env == null) && needs.qa.result == 'success')
         ||
-        (github.ref == 'refs/heads/feature/priyanka_testing' && needs.qa.result == 'success' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == '')
+        (github.ref == 'refs/heads/feature/argocd-trunk' && needs.qa.result == 'success' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == '')
       )
-    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/priyanka_testing
+    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/argocd-trunk
     with:
       env: preprod
       project: ${{ inputs.project }}
@@ -150,25 +158,33 @@ jobs:
     secrets: inherit
 
   prod:
-    name: 'prod-${{ inputs.module }}-${{ inputs.country }}'
+    name: 'prod${{ inputs.module }}${{ inputs.country }}'
     needs: [preprod]
     if: >
       (
         always() &&
         (
-          (github.ref == 'refs/heads/feature/priyanka-testing' && (needs.preprod.result == 'success') && inputs.cr_number != 'null' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'prod')
+          (github.ref == 'refs/heads/feature/argocd-trunk' && (needs.preprod.result == 'success') && inputs.cr_number != 'null' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'prod')
           ||
-          (github.ref == 'refs/heads/feature/priyanka-testing' && (needs.preprod.result == 'success') && inputs.cr_number != 'null' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == '')
+          (github.ref == 'refs/heads/feature/argocd-trunk' && (needs.preprod.result == 'success') && inputs.cr_number != 'null' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == '')
           ||
-          (github.ref == 'refs/heads/feature/priyanka-testing' && (inputs.deployOnly == true || inputs.restartOnly == true) && inputs.env == 'prod' && inputs.cr_number != 'null')
+          (github.ref == 'refs/heads/feature/argocd-trunk' && (inputs.deployOnly == true || inputs.restartOnly == true) && inputs.env == 'prod' && inputs.cr_number != 'null')
           ||
           ((inputs.env == '' || inputs.env == null) && (needs.preprod.result == 'success'))
         )
       )
-    uses: Global-SnT/global-templates-core/.github/workflows/TriggerIntegrationTest.yml@feature/priyanka-testing
+    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/argocd-trunk
     with:
-      namespace: ${{ inputs.namespace || vars[format('AKSNAMESPACE_PROD{0}', inputs.code)] }}
-      endpoint: ${{ inputs.endpoint || vars[format('AKS_PROD_ENDPOINT{0}', inputs.code)] }}
+      env: prod
+      project: ${{ inputs.project }}
+      module: ${{ inputs.module }}
+      country: ${{ inputs.country }}
+      code: ${{ inputs.code }}
+      ImageTag: ${{ inputs.ImageTag }}
+      restartOnly: ${{ inputs.restartOnly }}
+      namespace: ${{ vars[format('AKSNAMESPACE_PROD{0}', inputs.code)] }}
+      endpoint: ${{ vars[format('AKS_PROD_ENDPOINT{0}', inputs.code)] }}
+    secrets: inherit
 
   prod-dr:
     name: 'prod_dr${{ inputs.module }}${{ inputs.country }}'
@@ -177,7 +193,7 @@ jobs:
       (
         always() && needs.prod.result == 'success' && inputs.isDrProd == true
       )
-    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/priyanka_testing
+    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/argocd-trunk
     with:
       env: prod_dr
       project: ${{ inputs.project }}
@@ -193,6 +209,3 @@ jobs:
 
 
 
-
-
-          
