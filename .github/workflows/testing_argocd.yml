@@ -1,0 +1,59 @@
+what is the syntax issue or any yaml code issues 
+name: Deploy to argoCD trunk
+on:
+  workflow_dispatch:
+    inputs:
+      ImageTag:
+        description: 'Image Tag'
+        required: false
+        type: string
+        default: ''
+      deployOnly:
+        description: 'Deploy Only'
+        required: false
+        type: boolean
+        default: false
+      restartOnly:
+        description: 'Restart Only'
+        required: false
+        type: boolean
+        default: false
+      isDrProd:
+        description: 'Deploy to DR Environment?'
+        required: false
+        type: boolean
+        default: false
+      cr_number:
+        description: 'CR Number'
+        required: false
+        type: string
+        default: 'null'
+      env:
+        description: 'Environment (for regular deployment)'
+        required: false
+        type: choice
+        options:
+          - dev
+          - qa
+          - preprod
+          - prod
+          - none
+        default: none
+      project:
+        description: 'project'
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  deploy:
+    uses: Global-SnT/pepsico-global-templates/.github/workflows/argocdtrunk-test.yml@feature/priyanka_testing
+    with:
+      restartOnly: ${{ inputs.restartOnly }}
+      deployOnly: ${{ inputs.deployOnly }}
+      project: ${{ inputs.project || github.repository }}
+      ImageTag: ${{ inputs.ImageTag }}
+      env: ${{ inputs.env }}
+      isDrProd: ${{ inputs.isDrProd }}
+      cr_number: ${{ inputs.cr_number }}
+    secrets: inherit
