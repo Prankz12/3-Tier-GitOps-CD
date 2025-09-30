@@ -47,10 +47,10 @@ on:
     outputs:
       test_status:
         description: 'Status of integration tests (success/failed/skipped)'
-        value: ${{ jobs.check-and-process-artifacts.outputs.test_status }}
+        value: ${{ needs.check-and-process-artifacts.outputs.test_status }}
       build_id:
         description: 'Azure DevOps build ID'
-        value: ${{ jobs.check-and-process-artifacts.outputs.build_id }}
+        value: ${{ needs.check-and-process-artifacts.outputs.build_id }}
 
 jobs:
   check-and-process-artifacts:
