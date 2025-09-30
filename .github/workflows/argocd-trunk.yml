@@ -162,8 +162,7 @@ jobs:
           ((inputs.env == '' || inputs.env == null) && (needs.preprod.result == 'success'))
         )
       )
-    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/argocd-trunk
-    with:
+    
       env: prod
       project: ${{ inputs.project }}
       module: ${{ inputs.module }}
