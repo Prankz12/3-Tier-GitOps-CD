@@ -105,7 +105,7 @@ jobs:
         ||
         (github.ref == 'refs/heads/main' && needs.dev.result == 'success' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == '')
       )
-    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/argocd-trunk
+  
     with:
       env: qa
       project: ${{ inputs.project }}
@@ -133,7 +133,7 @@ jobs:
         ||
         (github.ref == 'refs/heads/feature/argocd-trunk' && needs.qa.result == 'success' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == '')
       )
-    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/argocd-trunk
+  
     with:
       env: preprod
       project: ${{ inputs.project }}
@@ -181,7 +181,7 @@ jobs:
       (
         always() && needs.prod.result == 'success' && inputs.isDrProd == true
       )
-    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/argocd-trunk
+    
     with:
       env: prod_dr
       project: ${{ inputs.project }}
