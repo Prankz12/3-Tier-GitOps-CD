@@ -1,202 +1,221 @@
-name: Deploy ArgoCD Trunk
+name: Check Integration Stagegate
+
+# Purpose: Validates integration test results from Azure DevOps builds, focusing on Cucumber reports.
+# Called by other pipelines (e.g., argocd-trunk.yml) to ensure tests pass before deployment.
 
 on:
   workflow_dispatch:
     inputs:
-      ImageTag:
-        description: 'ImageTag'
-        required: false
-        type: string
-        default: ''
-      deployOnly:
-        description: 'deployOnly'
-        required: false
-        type: boolean
-        default: false
-      cr_number:
-        description: 'cr_number'
-        required: false
+      integrationTestTool:
+        description: 'The integration test tool to use (e.g., cucumber)'
         type: string
         default: 'null'
-      restartOnly:
-        description: 'restartOnly'
         required: false
-        type: boolean
-        default: false
       module:
-        description: 'module'
-        required: false
+        description: 'Module name'
         type: string
         default: ''
-      project:
-        description: 'project'
         required: false
+      testEnv:
+        description: 'Test environment (e.g., dev, qa, prod)'
         type: string
         default: ''
-      code:
-        description: 'code'
         required: false
+      namespace:
+        description: 'AKS namespace for test execution'
         type: string
         default: ''
-      country:
-        description: 'country'
         required: false
+      endpoint:
+        description: 'AKS endpoint for test execution'
         type: string
         default: ''
-      clusterSuffix:
-        description: 'clusterSuffix'
         required: false
-        type: string
-        default: '01-aks'
-      env:
-        description: 'env to deploy to'
-        required: false
-        type: string
-        default: ''
-
-env:
-  DEPLOYMENT_FILE: helm-values.yaml
+    secrets:
+      ADO_ORG:
+        description: 'Azure DevOps organization'
+        required: true
+      ADO_PROJECT:
+        description: 'Azure DevOps project'
+        required: true
+      INTEGRATION_PIPELINE_ID:
+        description: 'Azure DevOps pipeline ID'
+        required: true
+      ADO_PAT:
+        description: 'Azure DevOps Personal Access Token'
+        required: true
+    outputs:
+      test_status:
+        description: 'Status of integration tests (success/failed)'
+        value: ${{ jobs.check-and-process-artifacts.outputs.test_status }}
+      build_id:
+        description: 'Azure DevOps build ID'
+        value: ${{ jobs.check-and-process-artifacts.outputs.build_id }}
 
 jobs:
-  dev:
-    name: 'dev${{ inputs.module }}${{ inputs.country }}'
-    if: >
-      (
-        (inputs.deployOnly == true && github.ref_name == 'feature/argocd-trunk' && inputs.env == 'dev')
-        ||
-        (github.ref == 'refs/heads/feature/argocd-trunk' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'dev')
-        ||
-        (startsWith(github.ref, 'refs/heads/feature/') && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'dev')
-        ||
-        (github.ref == 'refs/heads/feature/argocd-trunk' && inputs.restartOnly == true && inputs.env == 'dev')
-        ||
-        (inputs.env == '' || inputs.env == null)
-        ||
-        (github.ref == 'refs/heads/main' && inputs.deployOnly == false && inputs.restartOnly == false)
-        ||
-        (startsWith(github.ref, 'refs/heads/feature/') && inputs.deployOnly == false && inputs.restartOnly == false)
-      )
+  check-and-process-artifacts:
+    runs-on: [self-hosted, pep-dps-nonprod-gwc-global-01-aks-runners]
+    outputs:
+      test_status: ${{ steps.evaluate-tests.outputs.test_status }}
+      build_id: ${{ steps.check-pipeline.outputs.build_id }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/argocd-trunk
-    with:
-      env: dev
-      project: ${{ inputs.project }}
-      module: ${{ inputs.module }}
-      country: ${{ inputs.country }}
-      code: ${{ inputs.code }}
-      ImageTag: ${{ inputs.ImageTag }}
-      restartOnly: ${{ inputs.restartOnly }}
-      namespace: ${{ vars[format('AKSNAMESPACE_DEV{0}', inputs.code)] }}
-      endpoint: ${{ vars[format('AKS_DEV_ENDPOINT{0}', inputs.code)] }}
-    secrets: inherit
+      - name: Validate Inputs and Secrets
+        run: |
+          if (-not "${{ inputs.integrationTestTool }}") {
+              Write-Error "integrationTestTool is not set."
+              exit 1
+          }
+          if (-not "${{ inputs.testEnv }}") {
+              Write-Error "testEnv must be specified (e.g., dev, qa, prod)."
+              exit 1
+          }
+          if (-not "${{ secrets.ADO_ORG }}" -or -not "${{ secrets.ADO_PROJECT }}" -or -not "${{ secrets.INTEGRATION_PIPELINE_ID }}" -or -not "${{ secrets.ADO_PAT }}") {
+              Write-Error "One or more required secrets (ADO_ORG, ADO_PROJECT, INTEGRATION_PIPELINE_ID, ADO_PAT) are missing or empty."
+              exit 1
+          }
+        shell: pwsh
 
-  qa:
-    name: 'qa${{ inputs.module }}${{ inputs.country }}'
-    needs: dev
-    if: >
-      (
-        (always() && inputs.deployOnly == true && github.ref_name == 'feature/argocd-trunk' && inputs.env == 'qa')
-        ||
-        (always() && github.ref == 'refs/heads/feature/argocd-trunk' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'qa')
-        ||
-        (always() && github.ref == 'refs/heads/feature/argocd-trunk' && inputs.restartOnly == true && inputs.env == 'qa')
-        ||
-        ((inputs.env == '' || inputs.env == null) && needs.dev.result == 'success')
-        ||
-        (github.ref == 'refs/heads/main' && needs.dev.result == 'success' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == '')
-      )
-  
-    with:
-      env: qa
-      project: ${{ inputs.project }}
-      module: ${{ inputs.module }}
-      country: ${{ inputs.country }}
-      code: ${{ inputs.code }}
-      ImageTag: ${{ inputs.ImageTag }}
-      restartOnly: ${{ inputs.restartOnly }}
-      namespace: ${{ vars[format('AKSNAMESPACE_QA{0}', inputs.code)] }}
-      endpoint: ${{ vars[format('AKS_QA_ENDPOINT{0}', inputs.code)] }}
-    secrets: inherit
+      - name: Configure AKS (Optional)
+        if: ${{ inputs.namespace != '' && inputs.endpoint != '' }}
+        run: |
+          Write-Host "Configuring AKS with namespace: ${{ inputs.namespace }} and endpoint: ${{ inputs.endpoint }}"
+          # Example: kubectl config set-context --current --namespace="${{ inputs.namespace }}"
+        shell: pwsh
 
-  preprod:
-    name: 'preprod${{ inputs.module }}${{ inputs.country }}'
-    needs: qa
-    if: >
-      (
-        (always() && inputs.deployOnly == true && github.ref_name == 'feature/argocd-trunk' && inputs.env == 'preprod')
-        ||
-        (always() && github.ref == 'refs/heads/feature/argocd-trunk' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'preprod')
-        ||
-        (always() && github.ref == 'refs/heads/feature/argocd-trunk' && inputs.restartOnly == true && inputs.env == 'preprod')
-        ||
-        ((inputs.env == '' || inputs.env == null) && needs.qa.result == 'success')
-        ||
-        (github.ref == 'refs/heads/feature/argocd-trunk' && needs.qa.result == 'success' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == '')
-      )
-  
-    with:
-      env: preprod
-      project: ${{ inputs.project }}
-      module: ${{ inputs.module }}
-      country: ${{ inputs.country }}
-      code: ${{ inputs.code }}
-      ImageTag: ${{ inputs.ImageTag }}
-      restartOnly: ${{ inputs.restartOnly }}
-      namespace: ${{ vars[format('AKSNAMESPACE_PREPROD{0}', inputs.code)] }}
-      endpoint: ${{ vars[format('AKS_PREPROD_ENDPOINT{0}', inputs.code)] }}
-    secrets: inherit
+      - name: Check Last Pipeline Run
+        id: check-pipeline
+        if: inputs.integrationTestTool != 'null'
+        run: |
+          $headers = @{
+              Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":${{ secrets.ADO_PAT }}"))
+              "Content-Type" = "application/json"
+          }
+          $buildsUrl = "https://dev.azure.com/${{ secrets.ADO_ORG }}/${{ secrets.ADO_PROJECT }}/_apis/build/builds?definitions=${{ secrets.INTEGRATION_PIPELINE_ID }}&statusFilter=completed&api-version=7.1-preview.7&queryOrder=finishTimeDescending"
+          Write-Host "Pipeline ID: ${{ secrets.INTEGRATION_PIPELINE_ID }}"
+          Write-Host "Builds URL: $buildsUrl"
 
-  prod:
-    name: 'prod${{ inputs.module }}${{ inputs.country }}'
-    needs: [preprod]
-    if: >
-      (
-        always() &&
-        (
-          (github.ref == 'refs/heads/feature/argocd-trunk' && (needs.preprod.result == 'success') && inputs.cr_number != 'null' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'prod')
-          ||
-          (github.ref == 'refs/heads/feature/argocd-trunk' && (needs.preprod.result == 'success') && inputs.cr_number != 'null' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == '')
-          ||
-          (github.ref == 'refs/heads/feature/argocd-trunk' && (inputs.deployOnly == true || inputs.restartOnly == true) && inputs.env == 'prod' && inputs.cr_number != 'null')
-          ||
-          ((inputs.env == '' || inputs.env == null) && (needs.preprod.result == 'success'))
-        )
-      )
-    
-      env: prod
-      project: ${{ inputs.project }}
-      module: ${{ inputs.module }}
-      country: ${{ inputs.country }}
-      code: ${{ inputs.code }}
-      ImageTag: ${{ inputs.ImageTag }}
-      restartOnly: ${{ inputs.restartOnly }}
-      namespace: ${{ vars[format('AKSNAMESPACE_PROD{0}', inputs.code)] }}
-      endpoint: ${{ vars[format('AKS_PROD_ENDPOINT{0}', inputs.code)] }}
-    secrets: inherit
+          $currentTimeUTC = [System.DateTime]::UtcNow
+          $startTimeUTC = $currentTimeUTC.AddHours(-24)
+          Write-Host "🔹 Current UTC Time: $currentTimeUTC"
+          Write-Host "🔹 24 Hours Ago (UTC): $startTimeUTC"
 
-  prod-dr:
-    name: 'prod_dr${{ inputs.module }}${{ inputs.country }}'
-    needs: prod
-    if: >
-      (
-        always() && needs.prod.result == 'success' && inputs.isDrProd == true
-      )
-    
-    with:
-      env: prod_dr
-      project: ${{ inputs.project }}
-      module: ${{ inputs.module }}
-      country: ${{ inputs.country }}
-      code: ${{ inputs.code }}
-      ImageTag: ${{ inputs.ImageTag }}
-      restartOnly: ${{ inputs.restartOnly }}
-      namespace: ${{ vars[format('AKSNAMESPACE_PROD_DR{0}', inputs.code)] }}
-      endpoint: ${{ vars[format('AKS_PROD_DR_ENDPOINT{0}', inputs.code)] }}
-    secrets: inherit
+          try {
+              $response = Invoke-RestMethod -Uri $buildsUrl -Headers $headers -Method Get
+              $recentBuilds = if ($response -and $response.value) {
+                  $response.value | Where-Object {
+                      if ($_.finishTime) {
+                          $buildFinishTime = [System.DateTime]::Parse($_.finishTime).ToUniversalTime()
+                          Write-Host "🔹 Checking Build ID: $($_.id) - Finished: $buildFinishTime (UTC)"
+                          $buildFinishTime -ge $startTimeUTC
+                      } else {
+                          $false
+                      }
+                  } | Sort-Object finishTime -Descending
+              } else {
+                  @()
+              }
+          } catch {
+              Write-Error "Failed to fetch builds: $_"
+              exit 1
+          }
 
+          if ($recentBuilds.Count -gt 0) {
+              $buildId = $recentBuilds[0].id
+              Write-Host "Pipeline ${{ secrets.INTEGRATION_PIPELINE_ID }} ran in the last 24 hours. Build ID: $buildId"
+              echo "BUILD_ID=$buildId" >> $env:GITHUB_ENV
+              echo "TRIGGER_PIPELINE=false" >> $env:GITHUB_ENV
+              echo "build_id=$buildId" >> $GITHUB_OUTPUT
+          } else {
+              Write-Host "Pipeline ${{ secrets.INTEGRATION_PIPELINE_ID }} did NOT run in the last 24 hours."
+              echo "TRIGGER_PIPELINE=true" >> $env:GITHUB_ENV
+              echo "build_id=none" >> $GITHUB_OUTPUT
+          }
+        shell: pwsh
 
+      - name: Download All Artifacts
+        if: inputs.integrationTestTool != 'null' && env.TRIGGER_PIPELINE == 'false'
+        run: |
+          $buildId = "${{ env.BUILD_ID }}"
+          if (-not $buildId) {
+              Write-Error "No BUILD_ID set."
+              exit 1
+          }
+          $headers = @{
+              Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":${{ secrets.ADO_PAT }}"))
+              "Content-Type" = "application/json"
+          }
+          $artifactsUrl = "https://dev.azure.com/${{ secrets.ADO_ORG }}/${{ secrets.ADO_PROJECT }}/_apis/build/builds/$buildId/artifacts?api-version=7.1-preview.5"
+          Write-Host "Artifacts URL: $artifactsUrl"
 
+          try {
+              $artifacts = Invoke-RestMethod -Uri $artifactsUrl -Headers $headers -Method Get
+              if ($artifacts.value.Count -eq 0) {
+                  Write-Error "No artifacts found for build $buildId"
+                  exit 1
+              }
+          } catch {
+              Write-Error "Failed to fetch artifacts: $_"
+              exit 1
+          }
 
+          foreach ($artifact in $artifacts.value) {
+              $downloadUrl = $artifact.resource.downloadUrl
+              $artifactName = $artifact.name
+              Write-Host "Downloading artifact: $artifactName"
+              Invoke-WebRequest -Uri $downloadUrl -Headers $headers -OutFile "$artifactName.zip"
+              Expand-Archive -Path "$artifactName.zip" -DestinationPath "${{ github.workspace }}/artifacts/$artifactName" -Force
+          }
+        shell: pwsh
 
+      - name: List All Cucumber JSON Files
+        if: inputs.integrationTestTool == 'cucumber'
+        run: |
+          Write-Host "Searching for *cucumber*.json files in ${{ github.workspace }}/artifacts:"
+          $files = Get-ChildItem -Path "${{ github.workspace }}/artifacts" -Recurse -Include "*cucumber*.json" -File
+          if ($files.Count -eq 0) {
+              Write-Host "No matching cucumber.json files found."
+          } else {
+              foreach ($file in $files) {
+                  Write-Host " - $($file.FullName)"
+              }
+          }
+        shell: pwsh
 
-          
+      - name: Evaluate Test Results
+        id: evaluate-tests
+        if: inputs.integrationTestTool == 'cucumber'
+        run: |
+          $files = Get-ChildItem -Path "${{ github.workspace }}/artifacts" -Recurse -Include "*cucumber*.json" -File
+          $overallFailed = $false
+
+          foreach ($file in $files) {
+              Write-Host "`nEvaluating: $($file.FullName)"
+              try {
+                  $json = Get-Content -Raw -Path $file.FullName | ConvertFrom-Json
+                  $total = $json.Count
+                  $failed = ($json | Where-Object { $_.elements | Where-Object { $_.status -eq "failed" } }).Count
+                  $passed = $total - $failed
+                  $percentage = if ($total -gt 0) { ($passed / $total) * 100 } else { 0 }
+                  Write-Host " - Total: $total | Passed: $passed | Failed: $failed | %: $percentage"
+
+                  if ($percentage -lt 100) {
+                      $overallFailed = $true
+                  }
+              } catch {
+                  Write-Error "Error reading: $($file.FullName): $_"
+                  $overallFailed = $true
+              }
+          }
+
+          if ($overallFailed) {
+              Write-Error "One or more test reports failed to meet 100% pass criteria."
+              echo "test_status=failed" >> $GITHUB_OUTPUT
+              exit 1
+          } else {
+              Write-Host "All cucumber JSON test results passed 100%."
+              echo "test_status=success" >> $GITHUB_OUTPUT
+          }
+        shell: pwsh
