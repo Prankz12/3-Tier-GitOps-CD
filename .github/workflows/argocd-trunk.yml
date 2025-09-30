@@ -32,11 +32,6 @@ on:
         required: false
         type: string
         default: ''
-      isHotfixBranch:
-        description: 'isHotfixBranch'
-        required: false
-        type: boolean
-        default: false
       code:
         description: 'code'
         required: false
