@@ -1,4 +1,5 @@
 name: Deploy ArgoCD Trunk
+
 on:
   workflow_dispatch:
     inputs:
