@@ -46,7 +46,7 @@ on:
         required: true
     outputs:
       test_status:
-        description: 'Status of integration tests (success/failed)'
+        description: 'Status of integration tests (success/failed/skipped)'
         value: ${{ jobs.check-and-process-artifacts.outputs.test_status }}
       build_id:
         description: 'Azure DevOps build ID'
@@ -72,17 +72,25 @@ jobs:
               Write-Error "testEnv must be specified (e.g., dev, qa, prod)."
               exit 1
           }
+          $validEnvs = @("dev", "qa", "prod")
+          if ($validEnvs -notcontains "${{ inputs.testEnv }}") {
+              Write-Error "testEnv must be one of: $validEnvs"
+              exit 1
+          }
           if (-not "${{ secrets.ADO_ORG }}" -or -not "${{ secrets.ADO_PROJECT }}" -or -not "${{ secrets.INTEGRATION_PIPELINE_ID }}" -or -not "${{ secrets.ADO_PAT }}") {
               Write-Error "One or more required secrets (ADO_ORG, ADO_PROJECT, INTEGRATION_PIPELINE_ID, ADO_PAT) are missing or empty."
               exit 1
           }
+          echo "test_status=skipped" >> $GITHUB_OUTPUT
         shell: pwsh
+        id: validate
 
       - name: Configure AKS (Optional)
         if: ${{ inputs.namespace != '' && inputs.endpoint != '' }}
         run: |
           Write-Host "Configuring AKS with namespace: ${{ inputs.namespace }} and endpoint: ${{ inputs.endpoint }}"
-          # Example: kubectl config set-context --current --namespace="${{ inputs.namespace }}"
+          # Placeholder: Add kubectl commands if needed, e.g.:
+          # kubectl config set-context --current --namespace="${{ inputs.namespace }}"
         shell: pwsh
 
       - name: Check Last Pipeline Run
@@ -190,6 +198,12 @@ jobs:
         run: |
           $files = Get-ChildItem -Path "${{ github.workspace }}/artifacts" -Recurse -Include "*cucumber*.json" -File
           $overallFailed = $false
+
+          if ($files.Count -eq 0) {
+              Write-Error "No cucumber.json files found for evaluation."
+              echo "test_status=failed" >> $GITHUB_OUTPUT
+              exit 1
+          }
 
           foreach ($file in $files) {
               Write-Host "`nEvaluating: $($file.FullName)"
