@@ -1,5 +1,4 @@
 name: Check Integration Stagegate
-
 # Purpose: Validates integration test results from Azure DevOps builds, focusing on Cucumber reports.
 # Called by other pipelines (e.g., argocd-trunk.yml) to ensure tests pass before deployment.
 
