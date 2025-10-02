@@ -96,20 +96,20 @@ jobs:
             "Content-Type" = "application/json"
           }
 
-          $artifactsUrl = "https://dev.azure.com/$env:ADO_ORG/$env:ADO_PROJECT/_apis/build/builds/$buildId/artifacts?api-version=7.1-preview.5"
-          $root = Join-Path $env:GITHUB_WORKSPACE "artifacts"
-          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          # $artifactsUrl = "https://dev.azure.com/$env:ADO_ORG/$env:ADO_PROJECT/_apis/build/builds/$buildId/artifacts?api-version=7.1-preview.5"
+          # $root = Join-Path $env:GITHUB_WORKSPACE "artifacts"
+          # New-Item -ItemType Directory -Force -Path $root | Out-Null
 
-          $artifacts = Invoke-RestMethod -Uri $artifactsUrl -Headers $headers -Method Get
-          foreach ($artifact in $artifacts.value) {
-            $downloadUrl = $artifact.resource.downloadUrl
-            $artifactName = $artifact.name
-            $zipPath = Join-Path $root "$artifactName.zip"
-            $destPath = Join-Path $root $artifactName
+          # $artifacts = Invoke-RestMethod -Uri $artifactsUrl -Headers $headers -Method Get
+          # foreach ($artifact in $artifacts.value) {
+          #   $downloadUrl = $artifact.resource.downloadUrl
+          #   $artifactName = $artifact.name
+          #   $zipPath = Join-Path $root "$artifactName.zip"
+          #   $destPath = Join-Path $root $artifactName
 
-            Invoke-WebRequest -Uri $downloadUrl -Headers $headers -OutFile $zipPath
-            Expand-Archive -Path $zipPath -DestinationPath $destPath -Force
-          }
+          #   Invoke-WebRequest -Uri $downloadUrl -Headers $headers -OutFile $zipPath
+          #   Expand-Archive -Path $zipPath -DestinationPath $destPath -Force
+          # }
 
       # Step 4: Cypress automated tests check
       - name: Cypress Regression Tests
