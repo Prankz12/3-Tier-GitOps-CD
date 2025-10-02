@@ -89,7 +89,10 @@ jobs:
         shell: pwsh
         run: |
           $buildId = $env:BUILD_ID
-          if (-not $buildId) { exit 1 }
+      - name: Skip Artifact Download
+        if: env.BUILD_ID == ''
+        run: echo "No build found in last 24h. Skipping artifact download."
+         
          
           $headers = @{
             Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$env:ADO_PAT"))
@@ -110,9 +113,7 @@ jobs:
           #   Invoke-WebRequest -Uri $downloadUrl -Headers $headers -OutFile $zipPath
           #   Expand-Archive -Path $zipPath -DestinationPath $destPath -Force
           # }
-      - name: Skip Artifact Download
-        if: env.BUILD_ID == ''
-        run: echo "No build found in last 24h. Skipping artifact download."
+
         
       # Step 4: Cypress automated tests check
       - name: Cypress Regression Tests
