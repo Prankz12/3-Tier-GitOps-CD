@@ -5,7 +5,7 @@ on:
       regressionTestTool:
         description: 'Regression test tool (cypress or cucumber)'
         required: false
-        default: 'null'
+        default: 'cypress'
       module:
         description: 'Module name'
         required: false
