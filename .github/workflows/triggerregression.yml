@@ -1,5 +1,4 @@
 name: Trigger Regression Tests
-
 on:
   workflow_dispatch:
     inputs:
@@ -19,7 +18,7 @@ on:
 
 jobs:
   regression:
-    runs-on: [self-hosted, pep-dps-nonprod-gwc-global-01-aks-runners]
+    runs-on: ubuntu-latest
     env:
       ADO_ORG: ${{ secrets.ADO_ORG }}
       ADO_PROJECT: ${{ secrets.ADO_PROJECT }}
