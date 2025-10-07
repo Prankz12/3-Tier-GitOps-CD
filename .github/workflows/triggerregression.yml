@@ -32,8 +32,6 @@ jobs:
             -Dspring.country.code=Latam \
             -Dcucumber.filter.tags="@globalsonew and @latam" \
             -Xmx3072m
-        env:
-          JAVA_HOME: /opt/java/openjdk
 
       - name: Upload Cucumber Reports
         if: always()
