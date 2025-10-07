@@ -1,210 +1,51 @@
-name: Trigger Regression Tests
+name: Maven Test Pipeline
+
 on:
   workflow_dispatch:
-    inputs:
-      regressionTestTool:
-        description: 'Regression test tool (cypress or cucumber)'
-        required: false
-        default: 'cypress'
-      module:
-        description: 'Module name'
-        required: false
-        default: ''
-      testEnv:
-        description: 'Test environment'
-        required: false
-        default: ''
-        
 
 jobs:
-  regression:
-    runs-on: ubuntu-latest
-    env:
-      ADO_ORG: ${{ secrets.ADO_ORG }}
-      ADO_PROJECT: ${{ secrets.ADO_PROJECT }}
-      ADO_SERVER: ${{ secrets.ADO_SERVER }}
-      ADO_PAT: ${{ secrets.ADO_PAT }}
-
+  test-execution:
+    runs-on: [self-hosted, pep-dps-nonprod-eus-global-01-aks-agents]
+    timeout-minutes: 350
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # Step 1: Check last pipeline run
-      - name: Check Last Pipeline Run
-        if: ${{ github.event.inputs.regressionTestTool == 'cypress' || github.event.inputs.regressionTestTool == 'cucumber' }}
-        id: check_last_build
-        shell: pwsh
+      - name: Download Maven
+        run: wget https://archive.apache.org/dist/maven/maven-3/3.8.4/binaries/apache-maven-3.8.4-bin.zip
+
+      - name: Extract Maven
+        run: unzip apache-maven-3.8.4-bin.zip -d maven
+
+      - name: Run Maven Tests
         run: |
-          $organization = "${{ env.ADO_ORG }}"
-          $project = "${{ env.ADO_PROJECT }}"
-          $pipelineId = "${{ github.event.inputs.module }}${{ github.event.inputs.testEnv }}-regression-pipeline-id"
-          $personalAccessToken = "${{ env.ADO_PAT }}"
+          export PATH=$PWD/maven/apache-maven-3.8.4/bin:$PATH
+          mvn clean test -Dspring.profiles.active=dev -D spring.country.code=Latam -Dcucumber.filter.tags="@globalsonew and @latam" -Xmx3072m
+        env:
+          JAVA_HOME: /opt/java/jdk11.0.9.1
 
-          $headers = @{
-              Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$personalAccessToken"))
-              "Content-Type" = "application/json"
-          }
+      - name: Upload Cucumber Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CucumberReports
+          path: '**/results/**'
 
-          $currentTimeUTC = [System.DateTime]::UtcNow
-          $startTimeUTC = $currentTimeUTC.AddHours(-24)
+  parse-reports:
+    needs: test-execution
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
 
-          $buildsUrl = "https://dev.azure.com/$organization/$project/_apis/build/builds?definitions=$pipelineId&statusFilter=completed&api-version=7.1-preview.7&queryOrder=finishTimeDescending"
-          try {
-              $response = Invoke-RestMethod -Uri $buildsUrl -Headers $headers -Method Get
-              if ($response -and $response.value -and $response.value.Count -gt 0) {
-                  $recentBuilds = $response.value | Where-Object {
-                      if ($_.finishTime) {
-                          $buildFinishTime = [System.DateTime]::Parse($_.finishTime).ToUniversalTime()
-                          return $buildFinishTime -ge $startTimeUTC
-                      }
-                      return $false
-                  } | Sort-Object finishTime -Descending
-              } else {
-                  $recentBuilds = @()
-              }
-          } catch {
-              Write-Host "Error fetching builds: $_"
-              $recentBuilds = @()
-          }
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: CucumberReports
+          path: ${{ github.workspace }}/artifact
 
-          if ($recentBuilds.Count -gt 0) {
-              $buildId = $recentBuilds[0].id
-              echo "BUILD_ID=$buildId" >> $env:GITHUB_ENV
-              echo "TRIGGER_PIPELINE=false" >> $env:GITHUB_ENV
-          } else {
-              echo "TRIGGER_PIPELINE=true" >> $env:GITHUB_ENV
-          }
-
-      # Step 2: Trigger a new regression build (if needed)
-      - name: Trigger Regression Build
-        if: env.TRIGGER_PIPELINE == 'true'
-        shell: pwsh
-        run: |
-          Write-Host "This would trigger a regression build in Azure DevOps."
-          # NOTE: Replace with REST API to trigger build if needed
-
-      # Step 3: Download artifacts
-      - name: Download Regression Artifacts
-        if: ${{ github.event.inputs.regressionTestTool == 'cypress' || github.event.inputs.regressionTestTool == 'cucumber' }}
-        shell: pwsh
-        run: |
-          $buildId = $env:BUILD_ID
-      - name: Skip Artifact Download
-        if: ${{ env.BUILD_ID == '' }}
-        shell: pwsh
-        run: |
-          Write-Host "No build found in last 24h. Skipping artifact download."
-       
-            $headers = @{
-            Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$env:ADO_PAT"))
-            "Content-Type" = "application/json"
-          }
-
-          # $artifactsUrl = "https://dev.azure.com/$env:ADO_ORG/$env:ADO_PROJECT/_apis/build/builds/$buildId/artifacts?api-version=7.1-preview.5"
-          # $root = Join-Path $env:GITHUB_WORKSPACE "artifacts"
-          # New-Item -ItemType Directory -Force -Path $root | Out-Null
-
-          # $artifacts = Invoke-RestMethod -Uri $artifactsUrl -Headers $headers -Method Get
-          # foreach ($artifact in $artifacts.value) {
-          #   $downloadUrl = $artifact.resource.downloadUrl
-          #   $artifactName = $artifact.name
-          #   $zipPath = Join-Path $root "$artifactName.zip"
-          #   $destPath = Join-Path $root $artifactName
-
-          #   Invoke-WebRequest -Uri $downloadUrl -Headers $headers -OutFile $zipPath
-          #   Expand-Archive -Path $zipPath -DestinationPath $destPath -Force
-          # }
-
-        
-      # Step 4: Cypress automated tests check
-      - name: Cypress Regression Tests
-        if: ${{ github.event.inputs.regressionTestTool == 'cypress' }}
-        id: automated_cypress
-        shell: pwsh
-        run: |
-          $path = "$env:GITHUB_WORKSPACE/artifacts/${{ env.PATH_RT_RESULTS }}"
-          $reports = Get-ChildItem -Path $path -File -Recurse | ForEach-Object { $_.FullName }
-
-          $noOfTests = 0
-          $noOfFailed = 0
-          foreach ($report in $reports) {
-              $doc = [xml](Get-Content -Path $report)
-              $noOfTests += $doc.testsuites.tests
-              $noOfFailed += $doc.testsuites.failures
-          }
-
-          $passed = $noOfTests - $noOfFailed
-          $passPercentage = ($passed / $noOfTests) * 100
-
-          if ($passPercentage -lt 100) { exit 1 }
-
-      # Step 5: Cucumber automated tests check
-      - name: Cucumber Regression Tests
-        if: ${{ github.event.inputs.regressionTestTool == 'cucumber' }}
-        id: automated_cucumber
-        shell: pwsh
-        run: |
-          $doc = [xml](Get-Content -Path "$env:GITHUB_WORKSPACE/artifacts/${{ env.PATH_RT_RESULTS }}")
-
-          $totalTests = $doc.testsuite.tests
-          $failed = $doc.testsuite.failures
-          $passed = $totalTests - $failed
-          $passPercentage = ($passed / $totalTests) * 100
-
-          if ($passPercentage -lt 100) { exit 1 }
-
-      # # Step 6: Manual test check via ADO Test Plans
-      # - name: Manual Tests
-      #   id: manual_tests
-      #   shell: pwsh
-      #   run: |
-      #     $organization = "${{ env.ADO_ORG }}"
-      #     $project = "${{ env.ADO_PROJECT }}"
-      #     $planId = "${{ github.event.inputs.module }}${{ github.event.inputs.testEnv }}-regression-manual-test-plan-id"
-      #     $suiteId = "${{ github.event.inputs.module }}${{ github.event.inputs.testEnv }}-regression-manual-test-suit-id"
-      #     $pat = "${{ env.ADO_PAT }}"
-
-      #     $headers = @{
-      #         Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$pat"))
-      #         "Content-Type" = "application/json"
-      #     }
-
-      #     $pointsUrl = "https://dev.azure.com/$organization/$project/_apis/test/Plans/$planId/suites/$suiteId/points?api-version=6.0"
-      #     $pointsResponse = Invoke-RestMethod -Uri $pointsUrl -Headers $headers -Method Get
-
-      #     $runUrl = "https://dev.azure.com/$organization/$project/_apis/test/runs?top=1&planId=$planId&includeRunDetails=true&api-version=7.1-preview.3"
-      #     $runResponse = Invoke-RestMethod -Uri $runUrl -Headers $headers -Method Get
-      #     $runId = $runResponse.value[0].id
-
-      #     $resultsUrl = "https://dev.azure.com/$organization/$project/_apis/test/Runs/$runId/results?api-version=7.1-preview.3"
-      #     $resultsResponse = Invoke-RestMethod -Uri $resultsUrl -Headers $headers -Method Get
-
-      #     $passedOrNA = 0
-      #     $total = $resultsResponse.count
-
-      #     foreach ($result in $resultsResponse.value) {
-      #       if ($result.outcome -eq "Passed" -or $result.outcome -eq "NotApplicable") {
-      #         $passedOrNA++
-      #       }
-      #     }
-
-      #     $passPercent = [math]::Round(($passedOrNA / $total) * 100, 2)
-      #     if ($passPercent -lt 100) { exit 1 }
-
-      # # Step 7: Evaluate overall results
-      # - name: Evaluate Combined Results
-      #   shell: pwsh
-      #   run: |
-      #     if (($env::AUTOMATED_TESTS -eq 'true') -and ($env::MANUAL_TESTS -eq 'true')) {
-      #       Write-Host "Manual and Automated tests were successful"
-      #     } else {
-      #       exit 1
-      #     }
-
-      # Step 8: Fail if regression tool not configured
-      - name: Fail pipeline
-        if: ${{ github.event.inputs.regressionTestTool == 'null' || (github.event.inputs.regressionTestTool != 'cypress' && github.event.inputs.regressionTestTool != 'cucumber') }}
-        shell: pwsh
-        run: |
-          echo "Regression configurations are not set."
-          exit 1
+      - name: Parse Reports
+        run: bash gs-api/scripts/report-parser.sh
+        env:
+          ARTIFACT_DIRECTORY: ${{ github.workspace }}/artifact
+          ENV: '-Dspring.profiles.active=dev -D spring.country.code=Latam'
+          TAGS: '-Dcucumber.filter.tags="@globalsonew and @latam"'
