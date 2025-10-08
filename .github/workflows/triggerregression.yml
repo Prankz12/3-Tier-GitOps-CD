@@ -35,7 +35,7 @@ jobs:
       - name: Run Maven Tests
         run: |
           export PATH=$PWD/maven/apache-maven-3.8.4/bin:$PATH
-          mvn clean test -Dspring.profiles.active=dev -D spring.country.code=Latam -Dcucumber.filter.tags="@globalsonew and @latam" -integration-test
+          mvn clean test -Dspring.profiles.active=dev -D spring.country.code=Latam -Dcucumber.filter.tags="@globalsonew and @latam"
 
       - name: Upload Cucumber Reports
         if: always()
