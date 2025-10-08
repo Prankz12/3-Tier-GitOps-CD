@@ -7,31 +7,35 @@ jobs:
   test-execution:
     runs-on: ubuntu-latest
     timeout-minutes: 350
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Download Maven
-        run: wget https://archive.apache.org/dist/maven/maven-3/3.8.4/binaries/apache-maven-3.8.4-bin.zip
-
-      - name: Extract Maven
-        run: unzip apache-maven-3.8.4-bin.zip -d maven
-
-      - name: Set up JDK 11
+      - name: Detect Java version
+        id: detect-java
+        run: |
+          JAVA_VERSION=$(grep -oPm1 "(?<=<java.version>)[^<]+" pom.xml || \
+                        grep -oPm1 "(?<=<maven.compiler.source>)[^<]+" pom.xml || \
+                        grep -oPm1 "(?<=<maven.compiler.target>)[^<]+" pom.xml || \
+                        echo "17")
+          # Validate version format
+          if [[ ! $JAVA_VERSION =~ ^[0-9]+$ ]]; then
+            echo "Invalid Java version detected: $JAVA_VERSION, defaulting to 17"
+            JAVA_VERSION="17"
+          fi
+          echo "Detected Java version: $JAVA_VERSION"
+          echo "JAVA_VERSION=$JAVA_VERSION" >> $GITHUB_ENV
+        
+      - name: Set Up Java with Maven
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '11'
-
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: ''
+          
       - name: Run Maven Tests
         run: |
           export PATH=$PWD/maven/apache-maven-3.8.4/bin:$PATH
-          mvn clean test \
-            -Dspring.profiles.active=dev \
-            -Dspring.country.code=Latam \
-            -Dcucumber.filter.tags="@globalsonew and @latam" \
-            -Xmx3072m
+          mvn clean test -Dspring.profiles.active=dev -D spring.country.code=Latam -Dcucumber.filter.tags="@globalsonew and @latam" -Xmx3072m
 
       - name: Upload Cucumber Reports
         if: always()
@@ -44,10 +48,8 @@ jobs:
     needs: test-execution
     runs-on: ubuntu-latest
     continue-on-error: true
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Download Artifact
         uses: actions/download-artifact@v4
@@ -59,5 +61,5 @@ jobs:
         run: bash gs-api/scripts/report-parser.sh
         env:
           ARTIFACT_DIRECTORY: ${{ github.workspace }}/artifact
-          ENV: '-Dspring.profiles.active=dev -Dspring.country.code=Latam'
+          ENV: '-Dspring.profiles.active=dev -D spring.country.code=Latam'
           TAGS: '-Dcucumber.filter.tags="@globalsonew and @latam"'
