@@ -1,5 +1,4 @@
-name: Check Integration Stagegate
-
+name: Check Integration Stage gate
 on:
   workflow_dispatch:
     inputs:
