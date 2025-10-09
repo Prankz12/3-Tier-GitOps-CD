@@ -41,7 +41,7 @@ jobs:
         run: |
           $owner = "${{ github.repository_owner }}"
           $repo = "${{ github.event.repository.name }}"
-          $workflowName = "maven-test-pipeline.yml"
+          $workflowName = "triggeregression.yml"
 
           Write-Host "🔹 Checking last completed run for $workflowName in $owner/$repo"
 
