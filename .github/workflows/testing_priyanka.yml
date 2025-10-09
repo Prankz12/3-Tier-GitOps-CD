@@ -1,214 +1,101 @@
-name: Deploy ArgoCD Trunk
+name: Check Integration Stagegate
 
 on:
-  workflow_call:
+  workflow_dispatch:
     inputs:
-      ImageTag:
-        description: 'ImageTag'
-        required: false
+      integrationConfig:
+        description: 'Integration configuration (JSON: tool, env, etc.)'
         type: string
-        default: ''
-      deployOnly:
-        description: 'deployOnly'
         required: false
-        type: boolean
-        default: false
-      cr_number:
-        description: 'cr_number'
-        required: false
-        type: string
-        default: 'null'
-      restartOnly:
-        description: 'restartOnly'
-        required: false
-        type: boolean
-        default: false
-      module:
-        description: 'module'
-        required: false
-        type: string
-        default: ''
-      project:
-        description: 'project'
-        required: false
-        type: string
-        default: ''
+        default: '{"integrationTestTool":"cucumber","module":"gs-api","testEnv":"dev","namespace":"latam","endpoint":"https://example.com","project":"projectX","env":"dev","country":"Latam"}'
 
-      isDrProd:
-        description: 'isDrProd'
-        required: false
-        type: boolean
-        default: false
-      isHotfixBranch:
-        description: 'isHotfixBranch'
-        required: false
-        type: boolean
-        default: false
-      code:
-        description: 'code'
-        required: false
+      deployConfig:
+        description: 'Deployment configuration (JSON: cluster, flags, Maven POM, etc.)'
         type: string
-        default: ''
-      country:
-        description: 'country'
         required: false
-        type: string
-        default: ''
-      clusterSuffix:
-        description: 'clusterSuffix'
-        required: false
-        type: string
-        default: '01-aks'
-      env:
-        description: 'env to deploy to'
-        required: false
-        type: string
-        default: ''
-
-env:
-  DEPLOYMENT_FILE: helm-values.yaml
+        default: '{"deployOnly":false,"restartOnly":false,"isDrProd":false,"isHotfixBranch":false,"cr_number":"null","clusterSuffix":"01-aks","ImageTag":"","MavenPomFile":"gs-api/pom.xml"}'
 
 jobs:
-  dev:
-    name: 'dev${{ inputs.module }}${{ inputs.country }}'
-    if: >
-      (
-        (inputs.deployOnly == true && github.ref_name == 'feature/argocd-trunk' && inputs.env == 'dev')
-        ||
-        (github.ref == 'refs/heads/feature/argocd-trunk' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'dev')
-        ||
-        (startsWith(github.ref, 'refs/heads/feature/') && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'dev')
-        ||
-        (github.ref == 'refs/heads/feature/argocd-trunk' && inputs.restartOnly == true && inputs.env == 'dev')
-        ||
-        (inputs.env == '' || inputs.env == null)
-        ||
-        (github.ref == 'refs/heads/main' && inputs.deployOnly == false && inputs.restartOnly == false)
-        ||
-        (startsWith(github.ref, 'refs/heads/feature/') && inputs.deployOnly == false && inputs.restartOnly == false)
-      )
+  check-last-pipeline-run:
+    runs-on: ubuntu-latest
+    outputs:
+      trigger_pipeline: ${{ steps.check.outputs.trigger_pipeline }}
+    steps:
+      - name: Parse JSON Inputs
+        id: parse
+        shell: pwsh
+        run: |
+          $integration = ConvertFrom-Json '${{ inputs.integrationConfig }}'
+          $deploy = ConvertFrom-Json '${{ inputs.deployConfig }}'
 
-    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/argocd-trunk
+          Write-Host "🔹 Integration Tool: $($integration.integrationTestTool)"
+          Write-Host "🔹 Maven POM File: $($deploy.MavenPomFile)"
+          Write-Host "🔹 Cluster Suffix: $($deploy.clusterSuffix)"
+
+          echo "MAVEN_POM_FILE=$($deploy.MavenPomFile)" >> $env:GITHUB_ENV
+
+      - name: Check Last Run of Maven Test Pipeline
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $owner = "${{ github.repository_owner }}"
+          $repo = "${{ github.event.repository.name }}"
+          $workflowName = "maven-test-pipeline.yml"
+
+          Write-Host "🔹 Checking last completed run for $workflowName in $owner/$repo"
+
+          $api = "https://api.github.com/repos/$owner/$repo/actions/workflows/$workflowName/runs?status=completed&per_page=1"
+          $headers = @{ Authorization = "token $env:GH_TOKEN" }
+          $response = Invoke-RestMethod -Uri $api -Headers $headers
+
+          if (-not $response.workflow_runs -or $response.workflow_runs.Count -eq 0) {
+              Write-Host " No previous runs found. Will trigger pipeline."
+              echo "trigger_pipeline=true" >> $env:GITHUB_OUTPUT
+              exit 0
+          }
+
+          $lastRun = $response.workflow_runs[0]
+          $lastRunTimeUTC = [DateTime]::Parse($lastRun.updated_at).ToUniversalTime()
+          $currentTimeUTC = [DateTime]::UtcNow
+          $hoursSince = ($currentTimeUTC - $lastRunTimeUTC).TotalHours
+
+          Write-Host " Last run ended at $($lastRunTimeUTC.ToString('yyyy-MM-dd HH:mm:ss')) UTC"
+          Write-Host "  Hours since last run: $([math]::Round($hoursSince,2))"
+
+          if ($hoursSince -le 24) {
+              Write-Host " Last Maven Test Pipeline ran within 24 hours. Reuse results."
+              echo "trigger_pipeline=false" >> $env:GITHUB_OUTPUT
+          } else {
+              Write-Host " Last run is older than 24 hours. Trigger new pipeline."
+              echo "trigger_pipeline=true" >> $env:GITHUB_OUTPUT
+
+  invoke-tests:
+    needs: check-last-pipeline-run
+    if: ${{ needs.check-last-pipeline-run.outputs.trigger_pipeline == 'true' }}
+    uses: 3-Tier-GitOps-CD/.github/workflows/triggerregression.yml@main
     with:
-      env: dev
-      project: ${{ inputs.project }}
-      module: ${{ inputs.module }}
-      country: ${{ inputs.country }}
-      code: ${{ inputs.code }}
-      ImageTag: ${{ inputs.ImageTag }}
-      restartOnly: ${{ inputs.restartOnly }}
-      namespace: ${{ vars[format('AKSNAMESPACE_DEV{0}', inputs.code)] }}
-      endpoint: ${{ vars[format('AKS_DEV_ENDPOINT{0}', inputs.code)] }}
-    secrets: inherit
+      mavenPomFile: ${{ env.MAVEN_POM_FILE }}
 
-  qa:
-    name: 'qa${{ inputs.module }}${{ inputs.country }}'
-    needs: dev
-    if: >
-      (
-        (always() && inputs.deployOnly == true && github.ref_name == 'feature/argocd-trunk' && inputs.env == 'qa')
-        ||
-        (always() && github.ref == 'refs/heads/feature/argocd-trunk' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'qa')
-        ||
-        (always() && github.ref == 'refs/heads/feature/argocd-trunk' && inputs.restartOnly == true && inputs.env == 'qa')
-        ||
-        ((inputs.env == '' || inputs.env == null) && needs.dev.result == 'success')
-        ||
-        (github.ref == 'refs/heads/main' && needs.dev.result == 'success' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == '')
-      )
-    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/argocd-trunk
-    with:
-      env: qa
-      project: ${{ inputs.project }}
-      module: ${{ inputs.module }}
-      country: ${{ inputs.country }}
-      code: ${{ inputs.code }}
-      ImageTag: ${{ inputs.ImageTag }}
-      restartOnly: ${{ inputs.restartOnly }}
-      namespace: ${{ vars[format('AKSNAMESPACE_QA{0}', inputs.code)] }}
-      endpoint: ${{ vars[format('AKS_QA_ENDPOINT{0}', inputs.code)] }}
-    secrets: inherit
+  validate-results:
+    needs: [check-last-pipeline-run, invoke-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  preprod:
-    name: 'preprod${{ inputs.module }}${{ inputs.country }}'
-    needs: qa
-    if: >
-      (
-        (always() && inputs.deployOnly == true && github.ref_name == 'feature/argocd-trunk' && inputs.env == 'preprod')
-        ||
-        (always() && github.ref == 'refs/heads/feature/argocd-trunk' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'preprod')
-        ||
-        (always() && github.ref == 'refs/heads/feature/argocd-trunk' && inputs.restartOnly == true && inputs.env == 'preprod')
-        ||
-        ((inputs.env == '' || inputs.env == null) && needs.qa.result == 'success')
-        ||
-        (github.ref == 'refs/heads/feature/argocd-trunk' && needs.qa.result == 'success' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == '')
-      )
-    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/argocd-trunk
-    with:
-      env: preprod
-      project: ${{ inputs.project }}
-      module: ${{ inputs.module }}
-      country: ${{ inputs.country }}
-      code: ${{ inputs.code }}
-      ImageTag: ${{ inputs.ImageTag }}
-      restartOnly: ${{ inputs.restartOnly }}
-      namespace: ${{ vars[format('AKSNAMESPACE_PREPROD{0}', inputs.code)] }}
-      endpoint: ${{ vars[format('AKS_PREPROD_ENDPOINT{0}', inputs.code)] }}
-    secrets: inherit
+      - name: Download Cucumber Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: CucumberReports
+          path: ${{ github.workspace }}/artifact
 
-  prod:
-    name: 'prod${{ inputs.module }}${{ inputs.country }}'
-    needs: [preprod]
-    if: >
-      (
-        always() &&
-        (
-          (github.ref == 'refs/heads/feature/argocd-trunk' && (needs.preprod.result == 'success') && inputs.cr_number != 'null' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == 'prod')
-          ||
-          (github.ref == 'refs/heads/feature/argocd-trunk' && (needs.preprod.result == 'success') && inputs.cr_number != 'null' && inputs.deployOnly == false && inputs.restartOnly == false && inputs.env == '')
-          ||
-          (github.ref == 'refs/heads/feature/argocd-trunk' && (inputs.deployOnly == true || inputs.restartOnly == true) && inputs.env == 'prod' && inputs.cr_number != 'null')
-          ||
-          ((inputs.env == '' || inputs.env == null) && (needs.preprod.result == 'success'))
-        )
-      )
-    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/argocd-trunk
-    with:
-      env: prod
-      project: ${{ inputs.project }}
-      module: ${{ inputs.module }}
-      country: ${{ inputs.country }}
-      code: ${{ inputs.code }}
-      ImageTag: ${{ inputs.ImageTag }}
-      restartOnly: ${{ inputs.restartOnly }}
-      namespace: ${{ vars[format('AKSNAMESPACE_PROD{0}', inputs.code)] }}
-      endpoint: ${{ vars[format('AKS_PROD_ENDPOINT{0}', inputs.code)] }}
-    secrets: inherit
-
-  prod-dr:
-    name: 'prod_dr${{ inputs.module }}${{ inputs.country }}'
-    needs: prod
-    if: >
-      (
-        always() && needs.prod.result == 'success' && inputs.isDrProd == true
-      )
-    uses: Global-SnT/global-templates-core/.github/workflows/argocd-common.yaml@feature/argocd-trunk
-    with:
-      env: prod_dr
-      project: ${{ inputs.project }}
-      module: ${{ inputs.module }}
-      country: ${{ inputs.country }}
-      code: ${{ inputs.code }}
-      ImageTag: ${{ inputs.ImageTag }}
-      restartOnly: ${{ inputs.restartOnly }}
-      namespace: ${{ vars[format('AKSNAMESPACE_PROD_DR{0}', inputs.code)] }}
-      endpoint: ${{ vars[format('AKS_PROD_DR_ENDPOINT{0}', inputs.code)] }}
-    secrets: inherit
-
-
-
-
-
-
-          
+      - name: Parse and Validate Cucumber Results
+        run: |
+          echo "Running validation script..."
+          bash gs-api/scripts/report-parser.sh
+        env:
+          ARTIFACT_DIRECTORY: ${{ github.workspace }}/artifact
+          ENV: '-Dspring.profiles.active=dev -Dspring.country.code=Latam'
+          TAGS: '-Dcucumber.filter.tags="@globalsonew and @latam"'
