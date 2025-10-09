@@ -16,11 +16,11 @@ jobs:
           JAVA_VERSION=$(grep -oPm1 "(?<=<java.version>)[^<]+" pom.xml || \
                         grep -oPm1 "(?<=<maven.compiler.source>)[^<]+" pom.xml || \
                         grep -oPm1 "(?<=<maven.compiler.target>)[^<]+" pom.xml || \
-                        echo "17")
+                        echo "11")
           # Validate version format
           if [[ ! $JAVA_VERSION =~ ^[0-9]+$ ]]; then
-            echo "Invalid Java version detected: $JAVA_VERSION, defaulting to 17"
-            JAVA_VERSION="17"
+            echo "Invalid Java version detected: $JAVA_VERSION, defaulting to 11"
+            JAVA_VERSION="11"
           fi
           echo "Detected Java version: $JAVA_VERSION"
           echo "JAVA_VERSION=$JAVA_VERSION" >> $GITHUB_ENV
