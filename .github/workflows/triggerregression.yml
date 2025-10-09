@@ -2,6 +2,12 @@ name: Maven Test Pipeline
 
 on:
   workflow_call:
+    inputs:
+      mavenPomFile:
+        description: 'Path to Maven POM file'
+        required: false
+        type: string
+        default: 'pom.xml'
 
 jobs:
   test-execution:
