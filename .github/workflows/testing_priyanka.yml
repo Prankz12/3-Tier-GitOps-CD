@@ -69,6 +69,7 @@ jobs:
           } else {
               Write-Host " Last run is older than 24 hours. Trigger new pipeline."
               echo "trigger_pipeline=true" >> $env:GITHUB_OUTPUT
+          }
 
   invoke-tests:
     needs: check-last-pipeline-run
