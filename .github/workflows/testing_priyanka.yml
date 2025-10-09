@@ -74,7 +74,7 @@ jobs:
   invoke-tests:
     needs: check-last-pipeline-run
     if: ${{ needs.check-last-pipeline-run.outputs.trigger_pipeline == 'true' }}
-    uses: 3-Tier-GitOps-CD/.github/workflows/triggerregression.yml@main
+    uses: ./.github/workflows/triggerregression.yml
     with:
       mavenPomFile: pom.xml
 
